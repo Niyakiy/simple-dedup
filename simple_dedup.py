@@ -1,56 +1,107 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
+"""
+Simple duplicate files searching script
+
+Usage:
+  simple_dedup.py <DIR> [options]
+
+Options:
+  --help     Show help
+  --verbose  Add some debugging noise
+  --exclude-extentions=<>
+"""
+
+import collections
 import logging
-from os import (walk, stat)
-from os.path import (
-    join as os_join,
-    exists)
-from difflib import SequenceMatcher
+from os import (walk, path)
+from docopt import docopt
+
+LOGGER = logging.getLogger(__name__)
 
 
-class Directory:
+def load_directory_content(path):
+    """
+    Scan whole dir/subdirs and return files
+
+    :param path:
+    :return:
+    """
+    return_files = []
+    for directory, subdirectories, files in walk(path):
+        LOGGER.warning('Processing dir %s', directory)
+        return_files.extend(
+            [(directory, file) for file in files]
+        )
+    return return_files
+
+
+class DedupDirectoryProcessor:
+    """
+    Class to locate duplicated files
+    """
+
     def __init__(self, abs_path):
+        """
+        Init
+
+        :param abs_path:
+        """
         self.file_list = []
         self.file_count = 0
-        self.path = ""
+        self.path = abs_path
+        self.duplicate_with_counts = {}
 
+    def load_directory(self):
+        """
+        Load directory content
 
-def load_directory(dir_path):
-    for dir, subdirs, files in walk(dir_path):
-        print(dir, subdirs, files)
+        :return:
+        """
+        self.file_list = load_directory_content(self.path)
+        self.file_count = len(self.file_list)
+        LOGGER.warning('Found %i files.' % self.file_count)
 
+    def search_same_name(self):
+        """
+        Get file names with 2 and more occurences in different dirs
 
-def simple_file_compare(file1, file2):
-    """
-    Compares file name, size and last modification time
-    to guess if files are the same
-    :param file1: absolute path to file1
-    :param file2: absolute path to file2
-    :return: bool
-    """
+        :return:
+        """
+        counts = collections.Counter([item[1] for item in self.file_list]).most_common()
+        self.duplicate_with_counts = list(filter(
+            lambda x: x[1] > 1,
+            counts
+        ))
 
-    # checking file names usign difflib
-    matcher = SequenceMatcher(a=file1, b=file2)
-    print(matcher.ratio())
+    def make_duplicates_list(self):
+        """
+        Print to stdout files with same name and their path/size
 
-    f1stats = stat(file1) if exists(file1) else None
-    f2stats = stat(file2) if exists(file2) else None
+        :return:
+        """
+        for count_info in self.duplicate_with_counts:
+            print('-'*30)
+            print("File:", count_info[0])
+            all_file_locations = [
+                f"{file_info[0]}/{file_info[1]}" for file_info in filter(
+                    lambda x: x[1] == count_info[0],
+                    self.file_list
+                )
+            ]
+            print('\n'.join([f"{file} (size:{path.getsize(file)})" for file in sorted(
+                all_file_locations,
+                key=path.getsize,
+                reverse=True
+            )]))
 
-    if not f1stats:
-        logging.warning("File {} doesn't exist!".format(file1))
-        return False
-    if not f2stats:
-        logging.warning("File {} doesn't exist!".format(file2))
-        return False
-
-    # checking size
-    if f1stats.st_size == f2stats.st_size:
-        return True
-
-    return False
-
-def main():
-    print("")
 
 if __name__ == "__main__":
-    load_directory("d:\\backup")
+    arguments = docopt(__doc__)
+    if arguments['--verbose']:
+        print("Script's arguments: ", arguments)
+    d = DedupDirectoryProcessor(arguments['<DIR>'])
+    d.load_directory()
+    d.search_same_name()
+    d.make_duplicates_list()
+
